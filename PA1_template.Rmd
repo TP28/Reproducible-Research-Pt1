@@ -1,0 +1,207 @@
+---
+title: "Course Project Introduction"
+author: "Tobias Pitz"
+date: '`r Sys.Date()`'
+output: html_document
+---
+
+```{r setup, echo = TRUE,  include=FALSE, message= FALSE, warning= FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Introduction
+
+This is just a test document for privat use based on the information necessary to pass the course project 1 in reproducible research. 
+
+Dataset "activity.csv" includes the following columns:
+
+1. steps: number of steps taken in a 5-minute interval
+2. date: date in YYYY-MM-DD format
+3. interval: identifier for the 5-minute interval in which measurement was taken
+
+# Tasks
+
+1. Write a report that answers several questions
+2. complete the entire assignment in a single R markdown document that can be processed by knitr and be transformed into HTML
+
+
+
+# Presettings
+
+```{r , results= "hide"}
+setwd("C:/Users/Tobias/Documents/coursera/Reproducible Research/Course Project 1")
+
+packages<- c("dplyr","zip", "openxlsx", "ggplot2","xlsx", "lubridate", "tidyr")
+
+lapply(packages, require, character.only = TRUE)
+```
+
+# Read and transform Data
+
+Initial use of:
+>download.file(url = "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+              ,destfile = "activity.csv", )
+```{r}
+Rawdata<-read.csv2(file = "activity.csv",sep = "," ,header = TRUE)
+DailyData<-Rawdata%>%group_by(date)%>%summarise(Sum_Steps = sum(steps), Count_walked_intervals = n_distinct(steps))
+
+```
+
+## What is mean total number of steps taken per day?
+
+Histogram of number of steps taken per day
+```{r , message= FALSE}
+ggplot(data = DailyData, aes(x= Sum_Steps))+
+        geom_histogram(na.rm = TRUE,color = "blue")+
+        theme(axis.title.y = element_blank()
+              ,axis.text.x = element_text(angle=90, size=10, face="bold")
+              ,axis.text.y = element_text(size= 10, face= "bold")
+              ,title = element_text(size=25)
+              ,legend.text = element_text(size= 15))+
+        ggtitle("Number of Steps taken per Day")
+
+```
+
+Mean and media total number of steps taken per day
+
+```{r }
+Mean<-DailyData$Sum_Steps%>%mean(na.rm = TRUE)
+Median<-DailyData$Sum_Steps%>%median(na.rm = TRUE)
+
+Aggregates<-cbind(Mean, Median)
+row.names(Aggregates)<-c("Steps_per_day")
+
+print(Aggregates)
+
+```
+
+
+## Daily activity per 5-minute interval
+
+Modify raw data 
+
+
+```{r }
+Int_Steps<-Rawdata%>%group_by(interval)%>%summarise(mean_int_steps = mean(steps, na.rm = TRUE))%>%drop_na()
+```
+
+
+Time series graph
+```{r, message=FALSE }
+ggplot(data = Int_Steps,aes(x = interval,y = mean_int_steps))+
+                geom_line(na.rm = TRUE,stat = "identity", col = "blue", width = 1.5)+
+        theme(axis.title.y = element_blank()
+              ,axis.text.x = element_text(angle=90, size=10, face="bold")
+              ,axis.text.y = element_text(size= 10, face= "bold")
+              ,title = element_text(size=25)
+              ,legend.text = element_text(size= 15))+
+        ggtitle("Average number of steps per 5-minute interval")
+```
+
+Interval with max average number of steps
+
+```{r }
+Best_Int<-Int_Steps%>%filter(mean_int_steps == max(mean_int_steps))
+
+print(Best_Int)
+```
+
+
+
+## Imputing missing values (- and calculation of new aggregates)
+
+Number of missing entries in steps column
+
+```{r }
+missing_steps<-Rawdata[which(is.na(Rawdata$steps)),]%>%nrow()
+
+print(missing_steps)
+```
+
+
+Fill missing values with global mean per interval
+```{r }
+fill_mean<-mean(Int_Steps$mean_int_steps)%>%round(digits = 0)
+
+print(fill_mean)
+```
+
+Impute mean for NAs
+```{r }
+Imputed_Rawdata<- Rawdata%>%transform(steps = ifelse(is.na(Rawdata$steps), yes = fill_mean, no = Rawdata$steps))
+```
+
+Calculate new aggregates
+```{r }
+DailyData_2<-Imputed_Rawdata%>%group_by(date)%>%summarise(Sum_Steps = sum(steps))
+```
+
+
+Histogram:
+```{r }
+ggplot(data = DailyData_2, aes(x= Sum_Steps))+
+        geom_histogram(na.rm = TRUE,color = "blue")+
+        theme(axis.title.y = element_blank()
+              ,axis.text.x = element_text(angle=90, size=10, face="bold")
+              ,axis.text.y = element_text(size= 10, face= "bold")
+              ,title = element_text(size=25)
+              ,legend.text = element_text(size= 15))+
+        ggtitle("Number of Steps taken per Day")
+```
+
+Mean and median 
+```{r }
+Mean_2<-DailyData_2$Sum_Steps%>%mean(na.rm = TRUE)
+Median_2<-DailyData_2$Sum_Steps%>%median(na.rm = TRUE)
+
+Aggregates_2<-cbind(Mean_2, Median_2)
+row.names(Aggregates_2)<-c("Steps_per_day")
+```
+
+
+## Patterns at the Weekend vs. Workdays
+
+Modify raw data / create day columns 
+```{r }
+Data_Days<-Rawdata%>%mutate(date2 = as.POSIXct(date))%>%mutate(Weekday = weekdays(date2))%>%
+        mutate(Weekend = ifelse(test = Weekday %in% c("Samstag", "Sonntag"),yes = 1,no = 0))
+```
+
+Create separate datasets
+```{r }
+Data_Weekend<-Data_Days%>%filter(Weekend == 1)
+Data_Workday<-Data_Days%>%filter(Weekend == 0)
+```
+
+Aggregate data on interval level
+```{r }
+Int_Steps_Weekend<-Data_Weekend%>%group_by(interval)%>%summarise(mean_int_steps = mean(steps, na.rm = TRUE))%>%drop_na()
+
+Int_Steps_Workday<-Data_Workday%>%group_by(interval)%>%summarise(mean_int_steps = mean(steps, na.rm = TRUE))%>%drop_na()
+```
+
+Plot time series 
+
+```{r , "Weekend - movement behavior"}
+ggplot(data = Int_Steps_Weekend,aes(x = interval,y = mean_int_steps))+
+        geom_line(na.rm = TRUE,stat = "identity", col = "blue", width = 1.5)+
+        theme(axis.text.x = element_text(angle=90, size=10, face="bold")
+              ,axis.text.y = element_text(size= 10, face= "bold")
+              ,title = element_text(size=25)
+              ,legend.text = element_text(size= 15))+
+        ggtitle("Weekend Average number of steps per 5-minute interval")
+```
+
+
+```{r, fig.cap= "Workdays - movement behavior"}
+ggplot(data = Int_Steps_Workday,aes(x = interval,y = mean_int_steps))+
+        geom_line(na.rm = TRUE,stat = "identity", col = "blue", width = 1.5)+
+        theme(axis.text.x = element_text(angle=90, size=10, face="bold")
+              ,axis.text.y = element_text(size= 10, face= "bold")
+              ,title = element_text(size=25)
+              ,legend.text = element_text(size= 15))+
+        ggtitle("Workday Average number of steps per 5-minute interval")
+```
+
+
